@@ -1,4 +1,3 @@
-
 import { CORE_SUBJECTS, DEFAULT_GRADING_REMARKS } from './constants';
 import { ClassStatistics, ProcessedStudent, ComputedSubject, StudentData, FacilitatorStats, StaffMember } from './types';
 
@@ -162,98 +161,184 @@ export const calculateFacilitatorStats = (processedStudents: ProcessedStudent[])
       entry.totalGradeValue += sub.gradeValue;
     });
   });
+  
   return Object.values(statsMap).map(stat => {
-    const totalExpectedValue = stat.studentCount * 9;
-    const percentage = totalExpectedValue > 0 ? (1 - (stat.totalGradeValue / totalExpectedValue)) * 100 : 0;
-    let perfGrade = 'F9';
-    if (percentage >= 80) perfGrade = 'A1';
-    else if (percentage >= 70) perfGrade = 'B2';
-    else if (percentage >= 60) perfGrade = 'B3';
-    else if (percentage >= 50) perfGrade = 'C4';
-    else if (percentage >= 45) perfGrade = 'C5';
-    else if (percentage >= 40) perfGrade = 'C6';
-    else if (percentage >= 35) perfGrade = 'D7';
-    else if (percentage >= 30) perfGrade = 'E8';
-    return { ...stat, averageGradeValue: stat.totalGradeValue / stat.studentCount, performancePercentage: parseFloat(percentage.toFixed(2)), performanceGrade: perfGrade };
-  }).sort((a, b) => b.performancePercentage - a.performancePercentage);
+    const avg = stat.totalGradeValue / stat.studentCount;
+    const perf = Math.round((1 - (stat.totalGradeValue / (stat.studentCount * 9))) * 100);
+    
+    let grade = 'F9';
+    if (perf >= 80) grade = 'A1';
+    else if (perf >= 70) grade = 'B2';
+    else if (perf >= 60) grade = 'B3';
+    else if (perf >= 50) grade = 'C4';
+    else if (perf >= 45) grade = 'C5';
+    else if (perf >= 40) grade = 'C6';
+    else if (perf >= 35) grade = 'D7';
+    else if (perf >= 30) grade = 'E8';
+
+    return {
+      ...stat,
+      performancePercentage: perf,
+      averageGradeValue: avg,
+      performanceGrade: grade
+    };
+  });
+};
+
+export const generatePDFBlob = async (elementId: string, filename: string): Promise<{ blob: Blob, file: File } | null> => {
+  const originalElement = document.getElementById(elementId);
+  if (!originalElement) return null;
+
+  // @ts-ignore
+  const html2pdf = (window as any).html2pdf;
+  if (!html2pdf) {
+    console.error("html2pdf library not found.");
+    return null;
+  }
+
+  const clone = originalElement.cloneNode(true) as HTMLElement;
+  
+  const replaceInputs = (tagName: string) => {
+    const originals = originalElement.querySelectorAll(tagName);
+    const clones = clone.querySelectorAll(tagName);
+    originals.forEach((orig, idx) => {
+      const originalInput = orig as HTMLInputElement | HTMLTextAreaElement;
+      const cloneInput = clones[idx] as HTMLElement;
+      if (!cloneInput) return;
+      
+      const div = document.createElement('div');
+      div.textContent = originalInput.value;
+      div.style.whiteSpace = tagName === 'textarea' ? 'pre-wrap' : 'nowrap';
+      div.className = cloneInput.className;
+      div.classList.remove('hover:bg-yellow-50', 'focus:bg-yellow-100', 'focus:border-blue-500');
+      
+      const computed = window.getComputedStyle(originalInput);
+      div.style.textAlign = computed.textAlign || 'inherit';
+      div.style.fontWeight = computed.fontWeight;
+      div.style.fontSize = computed.fontSize;
+      div.style.color = computed.color;
+      div.style.fontFamily = computed.fontFamily;
+      div.style.width = '100%';
+      div.style.display = 'block';
+      
+      cloneInput.parentNode?.replaceChild(div, cloneInput);
+    });
+  };
+  replaceInputs('input');
+  replaceInputs('textarea');
+
+  clone.querySelectorAll('button, [data-html2canvas-ignore]').forEach(el => el.remove());
+
+  const headings = clone.querySelectorAll('h1, h2, .text-center, .school-header');
+  headings.forEach(h => {
+    (h as HTMLElement).style.textAlign = 'center';
+    (h as HTMLElement).style.width = '100%';
+    (h as HTMLElement).style.display = 'block';
+  });
+
+  clone.style.width = '210mm';
+  clone.style.height = 'auto'; 
+  clone.style.minHeight = '296mm';
+  clone.style.padding = '10mm'; 
+  clone.style.boxSizing = 'border-box';
+  clone.style.background = 'white';
+  clone.style.margin = '0';
+  clone.style.transform = 'none';
+
+  const container = document.createElement('div');
+  container.style.position = 'fixed';
+  container.style.top = '0';
+  container.style.left = '-10000px';
+  container.appendChild(clone);
+  document.body.appendChild(container);
+
+  const opt = {
+    margin: 0, 
+    filename: filename,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { 
+      scale: 2, 
+      useCORS: true,
+      windowWidth: 794 
+    },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  };
+
+  try {
+    const blob = await html2pdf().set(opt).from(clone).output('blob');
+    const file = new File([blob], filename, { type: 'application/pdf' });
+    document.body.removeChild(container);
+    return { blob, file };
+  } catch (e) {
+    console.error("generatePDFBlob error:", e);
+    if (container.parentNode) document.body.removeChild(container);
+    return null;
+  }
 };
 
 /**
- * Common PDF Generation logic for sharing/saving individual reports
+ * Generates a Word (.docx) compatible blob from an HTML element
+ * Uses the MHTML approach which Word can interpret natively
  */
-export async function generatePDFBlob(elementId: string, filename: string): Promise<{ blob: Blob, file: File } | null> {
-    const originalElement = document.getElementById(elementId);
-    if (!originalElement) return null;
-    
-    // @ts-ignore
-    if (typeof window.html2pdf === 'undefined') return null;
+export const generateWordBlob = async (elementId: string, filename: string): Promise<{ blob: Blob, file: File } | null> => {
+  const originalElement = document.getElementById(elementId);
+  if (!originalElement) return null;
 
-    const clone = originalElement.cloneNode(true) as HTMLElement;
+  const clone = originalElement.cloneNode(true) as HTMLElement;
+  
+  // Replace inputs and interactive fields
+  const replaceInputs = (tagName: string) => {
+    const originals = originalElement.querySelectorAll(tagName);
+    const clones = clone.querySelectorAll(tagName);
+    originals.forEach((orig, idx) => {
+      const originalInput = orig as HTMLInputElement | HTMLTextAreaElement;
+      if (clones[idx]) {
+        const div = document.createElement('div');
+        div.textContent = originalInput.value;
+        clones[idx].parentNode?.replaceChild(div, clones[idx]);
+      }
+    });
+  };
+  replaceInputs('input');
+  replaceInputs('textarea');
 
-    const replaceInputsWithText = (tagName: string) => {
-        const originals = originalElement.querySelectorAll(tagName);
-        const clones = clone.querySelectorAll(tagName);
-        originals.forEach((orig, index) => {
-            if (!clones[index]) return;
-            const el = clones[index] as HTMLElement;
-            const originalInput = orig as HTMLInputElement | HTMLTextAreaElement;
-            const div = document.createElement('div');
-            div.style.whiteSpace = tagName === 'textarea' ? 'pre-wrap' : 'nowrap';
-            div.textContent = originalInput.value;
-            div.className = el.className;
-            div.classList.remove('hover:bg-yellow-50', 'focus:bg-yellow-100', 'focus:border-blue-500', 'focus:outline-none', 'resize-none', 'overflow-hidden');
-            const computed = window.getComputedStyle(originalInput);
-            div.style.textAlign = computed.textAlign;
-            div.style.fontWeight = computed.fontWeight;
-            div.style.fontSize = computed.fontSize;
-            div.style.fontFamily = computed.fontFamily;
-            div.style.color = computed.color;
-            div.style.width = '100%';
-            div.style.display = 'block';
-            div.style.background = 'transparent';
-            div.style.borderBottom = computed.borderBottom;
-            el.parentNode?.replaceChild(div, el);
-        });
-    };
+  clone.querySelectorAll('button, [data-html2canvas-ignore]').forEach(el => el.remove());
 
-    replaceInputsWithText('input');
-    replaceInputsWithText('textarea');
+  // Center alignment for word headings
+  clone.querySelectorAll('h1, h2, .text-center, .school-header').forEach(h => {
+    (h as HTMLElement).style.textAlign = 'center';
+  });
 
-    const buttons = clone.querySelectorAll('button');
-    buttons.forEach(btn => btn.parentElement?.remove());
-    
-    clone.style.transform = 'none';
-    clone.style.margin = '0';
-    clone.style.height = '296mm';
-    clone.style.width = '210mm';
+  // Table styling for word
+  clone.querySelectorAll('table').forEach(tbl => {
+    (tbl as HTMLElement).style.borderCollapse = 'collapse';
+    (tbl as HTMLElement).style.width = '100%';
+    tbl.querySelectorAll('td, th').forEach(cell => {
+      (cell as HTMLElement).style.border = '1pt solid black';
+      (cell as HTMLElement).style.padding = '5pt';
+    });
+  });
 
-    const container = document.createElement('div');
-    container.style.position = 'absolute';
-    container.style.top = '-10000px';
-    container.style.left = '0';
-    container.style.width = '210mm';
-    container.style.zIndex = '-1';
-    container.appendChild(clone);
-    document.body.appendChild(container);
+  const content = clone.innerHTML;
+  const header = `
+    <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+    <head><meta charset='utf-8'>
+    <style>
+      body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11pt; }
+      .text-center { text-align: center; }
+      table { border-collapse: collapse; width: 100%; margin-bottom: 10pt; }
+      th, td { border: 1pt solid #000; padding: 5pt; }
+      .font-bold { font-weight: bold; }
+      h1 { font-size: 24pt; color: #1e3a8a; }
+      h2 { font-size: 18pt; color: #b91c1c; }
+    </style>
+    </head><body>
+  `;
+  const footer = "</body></html>";
+  const sourceHTML = header + content + footer;
 
-    const opt = {
-      margin: 0,
-      filename: filename,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, scrollY: 0, windowWidth: 794 },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    };
-
-    try {
-        // @ts-ignore
-        const pdfWorker = window.html2pdf().set(opt).from(clone);
-        const pdfBlob = await pdfWorker.output('blob');
-        const file = new File([pdfBlob], filename, { type: 'application/pdf' });
-        document.body.removeChild(container);
-        return { blob: pdfBlob, file };
-    } catch (error) {
-        console.error("PDF Generation Error:", error);
-        if (container.parentNode) document.body.removeChild(container);
-        return null;
-    }
-}
+  const blob = new Blob(['\ufeff', sourceHTML], { type: 'application/msword' });
+  const file = new File([blob], filename, { type: 'application/msword' });
+  
+  return { blob, file };
+};

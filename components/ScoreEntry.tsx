@@ -51,33 +51,22 @@ const ScoreEntry: React.FC<ScoreEntryProps> = ({ students, setStudents, settings
   const activeIndicatorsList = settings.activeIndicators || DAYCARE_INDICATORS;
 
   // Science Base Logic
-  const scienceBase = settings.scienceBase || 140;
+  const scienceBase = settings.scienceBase || 100;
 
   const handleScoreChange = (id: number, field: 'sectionA' | 'sectionB', value: string) => {
     let numValue = parseFloat(value);
     if (isNaN(numValue)) numValue = 0;
     
-    // Daycare Logic: simplified to just Subject Score (Manual)
+    // Daycare Logic
     if (isEarlyChildhood) {
         if (numValue > 100) numValue = 100;
         if (numValue < 0) numValue = 0;
         
         setStudents(prev => prev.map(student => {
             if (student.id !== id) return student;
-            
-            const currentDetails = student.scoreDetails?.[selectedSubject] || { sectionA: 0, sectionB: 0, total: 0 };
-            
-            // Section B (Manual/Subj Score) is the input
             const currentB = numValue;
-
-            // Final Score is just the Manual Score
             const finalScore = currentB;
-
-            const newDetails = { 
-                sectionA: 0, 
-                sectionB: currentB, 
-                total: finalScore 
-            };
+            const newDetails = { sectionA: 0, sectionB: currentB, total: finalScore };
             return {
                 ...student,
                 scores: { ...student.scores, [selectedSubject]: finalScore },
@@ -122,6 +111,39 @@ const ScoreEntry: React.FC<ScoreEntryProps> = ({ students, setStudents, settings
     }));
   };
 
+  const handleScienceBaseToggle = (newBase: 100 | 140) => {
+    onSettingChange('scienceBase', newBase);
+    
+    // Recalculate all science scores for students to reflect the new normalization base
+    setStudents(prev => prev.map(student => {
+        const scienceDetails = student.scoreDetails?.['Science'];
+        if (!scienceDetails) return student;
+        
+        const rawTotal = scienceDetails.sectionA + scienceDetails.sectionB;
+        let newTotal = rawTotal;
+        if (newBase === 140) {
+            newTotal = Math.round(rawTotal / 1.4);
+        } else {
+            newTotal = Math.round(rawTotal);
+        }
+        
+        return {
+            ...student,
+            scores: { 
+                ...student.scores, 
+                Science: newTotal 
+            },
+            scoreDetails: {
+                ...student.scoreDetails,
+                Science: { 
+                    ...scienceDetails, 
+                    total: newTotal 
+                }
+            }
+        };
+    }));
+  };
+
   const handleIndicatorChange = (id: number, rating: 'D' | 'A' | 'A+') => {
       setStudents(prev => prev.map(s => {
           if (s.id !== id) return s;
@@ -149,7 +171,6 @@ const ScoreEntry: React.FC<ScoreEntryProps> = ({ students, setStudents, settings
       }));
   };
 
-  // Daycare Skill Update via Footer Checklist
   const handleSkillChange = (id: number, skill: string, rating: 'D' | 'A' | 'A+') => {
       setStudents(prev => prev.map(s => {
           if (s.id !== id) return s;
@@ -205,7 +226,6 @@ const ScoreEntry: React.FC<ScoreEntryProps> = ({ students, setStudents, settings
 
   return (
     <div className="bg-white p-6 rounded shadow-md max-w-6xl mx-auto min-h-screen pb-96">
-      {/* Top Header & Save */}
       <div className="mb-4 border-b pb-4 flex justify-between items-center">
         <h2 className="text-2xl font-bold text-blue-900">Score Entry Dashboard {isEarlyChildhood && '(Early Childhood)'}</h2>
         <button 
@@ -265,7 +285,6 @@ const ScoreEntry: React.FC<ScoreEntryProps> = ({ students, setStudents, settings
           </div>
       )}
 
-      {/* Subject Selector */}
       <div className="flex flex-col gap-4 mb-6 bg-gray-50 p-4 rounded border border-gray-200">
         <div className="flex flex-wrap items-center gap-4">
             <div className="flex flex-col flex-1">
@@ -312,44 +331,38 @@ const ScoreEntry: React.FC<ScoreEntryProps> = ({ students, setStudents, settings
             </button>
         </div>
 
-        {/* Science Specific Toggle */}
         {isScience && isJHS && (
             <div className="bg-indigo-50 p-3 rounded border border-indigo-200 flex items-center justify-between">
                 <div>
-                    <h4 className="text-xs font-bold uppercase text-indigo-900">Science Scoring Configuration</h4>
-                    <p className="text-[10px] text-indigo-700">Choose if the Science paper was marked over 100 or 140 (Normalized).</p>
+                    <h4 className="text-xs font-bold uppercase text-indigo-900">Science Scoring Mode</h4>
+                    <p className="text-[10px] text-indigo-700">Norm (140) applies a /1.4 divisor. Standard (100) uses absolute total.</p>
                 </div>
                 <div className="flex bg-white rounded border border-indigo-300 p-1">
                     <button 
-                        onClick={() => onSettingChange('scienceBase', 100)}
+                        onClick={() => handleScienceBaseToggle(100)}
                         className={`px-3 py-1 rounded text-xs font-bold transition ${scienceBase === 100 ? 'bg-indigo-600 text-white' : 'text-indigo-600 hover:bg-indigo-50'}`}
                     >
-                        Marked / 100
+                        Standard (100)
                     </button>
                     <button 
-                        onClick={() => onSettingChange('scienceBase', 140)}
+                        onClick={() => handleScienceBaseToggle(140)}
                         className={`px-3 py-1 rounded text-xs font-bold transition ${scienceBase === 140 ? 'bg-indigo-600 text-white' : 'text-indigo-600 hover:bg-indigo-50'}`}
                     >
-                        Marked / 140
+                        Normalized (140)
                     </button>
                 </div>
             </div>
         )}
       </div>
 
-      {/* Main Table */}
       <div className="overflow-x-auto shadow-inner rounded border border-gray-300">
         <table className="w-full border-collapse text-sm">
           <thead className="bg-gray-100">
             <tr>
               <th className="border p-2 text-left w-12">ID</th>
               <th className="border p-2 text-left">Pupil Name</th>
-              
-              {/* Early Childhood Columns */}
               {isEarlyChildhood && !isIndicator ? (
-                 <>
-                    <th className="border p-2 w-24 text-center bg-blue-50 text-blue-900">Subj. Score %</th>
-                 </>
+                 <th className="border p-2 w-24 text-center bg-blue-50 text-blue-900">Subj. Score %</th>
               ) : (
                 <>
                   {!isEarlyChildhood && <th className="border p-2 w-20 text-center bg-blue-50">Sec A</th>}
@@ -358,14 +371,10 @@ const ScoreEntry: React.FC<ScoreEntryProps> = ({ students, setStudents, settings
                   </th>
                 </>
               )}
-              
               {isIndicator && <th className="border p-2 w-20 text-center bg-gray-100">Obs. Avg</th>}
-              
               {!isEarlyChildhood && <th className="border p-2 w-16 text-center font-bold bg-gray-200">Tot</th>}
               {(isScience && isJHS) && <th className="border p-2 w-16 text-center font-bold bg-green-100">Norm</th>}
-              
               {!isEarlyChildhood && <th className="border p-2 text-left bg-gray-50 text-xs w-48">Auto Remark</th>}
-              
               <th className="border p-2 text-left w-48">Note</th>
               <th className="border p-2 w-20 text-center">Act</th>
             </tr>
@@ -374,15 +383,10 @@ const ScoreEntry: React.FC<ScoreEntryProps> = ({ students, setStudents, settings
             {students.map(student => {
               const details = student.scoreDetails?.[selectedSubject];
               const existingTotal = student.scores[selectedSubject] || 0;
-              
               const valA = details?.sectionA !== undefined ? details.sectionA : 0; 
-              // Resolve valB (Manual Score for Early Childhood) correctly
               const valB = (details?.sectionB !== undefined) ? details.sectionB : existingTotal; 
-              
               const displayTotal = details ? details.total : existingTotal;
               const rawTotal = valA + valB;
-
-              // Indicator Logic
               let derivedRating = '';
               let obsAvgDisplay = '-';
               if (isIndicator) {
@@ -394,7 +398,6 @@ const ScoreEntry: React.FC<ScoreEntryProps> = ({ students, setStudents, settings
                   }
               }
               const currentRating = student.skills?.[selectedSubject] || derivedRating;
-
               return (
                 <tr 
                     key={student.id} 
@@ -403,68 +406,35 @@ const ScoreEntry: React.FC<ScoreEntryProps> = ({ students, setStudents, settings
                 >
                   <td className="border p-2 text-center text-gray-500">{student.id}</td>
                   <td className="border p-2 font-bold"><EditableField value={student.name} onChange={(val) => handleNameChange(student.id, val)} className="w-full font-bold uppercase"/></td>
-                  
                   {isEarlyChildhood && !isIndicator ? (
-                      <>
-                        <td className="border p-2 text-center bg-blue-50/50">
-                            <input 
-                                type="number" 
-                                min="0" 
-                                max="100" 
-                                value={valB === 0 ? '' : valB} 
-                                onChange={(e) => handleScoreChange(student.id, 'sectionB', e.target.value)} 
-                                className="w-full text-center p-1 border rounded" 
-                                onClick={(e) => e.stopPropagation()}
-                                placeholder="%"
-                            />
-                        </td>
-                      </>
+                    <td className="border p-2 text-center bg-blue-50/50">
+                        <input type="number" min="0" max="100" value={valB === 0 ? '' : valB} onChange={(e) => handleScoreChange(student.id, 'sectionB', e.target.value)} className="w-full text-center p-1 border rounded" onClick={(e) => e.stopPropagation()} placeholder="%"/>
+                    </td>
                   ) : (
-                      <>
-                        {!isEarlyChildhood && (
-                            <td className="border p-2 text-center bg-blue-50/50">
-                                <input type="number" min="0" max="40" value={valA === 0 ? '' : valA} onChange={(e) => handleScoreChange(student.id, 'sectionA', e.target.value)} className="w-full text-center p-1 border rounded" onClick={(e) => e.stopPropagation()}/>
-                            </td>
-                        )}
+                    <>
+                      {!isEarlyChildhood && (
                         <td className="border p-2 text-center bg-blue-50/50">
-                            {isIndicator ? (
-                                <select 
-                                    value={currentRating}
-                                    onChange={(e) => handleIndicatorChange(student.id, e.target.value as any)}
-                                    className="w-full p-1 border rounded font-bold text-center"
-                                    onClick={(e) => e.stopPropagation()}
-                                >
-                                    <option value="">-</option>
-                                    <option value="D">D</option>
-                                    <option value="A">A</option>
-                                    <option value="A+">A+</option>
-                                </select>
-                            ) : (
-                                <input 
-                                    type="number" 
-                                    min="0" 
-                                    max={(isScience && scienceBase === 140) ? 100 : 60} 
-                                    value={valB === 0 ? '' : valB} 
-                                    onChange={(e) => handleScoreChange(student.id, 'sectionB', e.target.value)} 
-                                    className="w-full text-center p-1 border rounded" 
-                                    onClick={(e) => e.stopPropagation()}
-                                />
-                            )}
+                            <input type="number" min="0" max="40" value={valA === 0 ? '' : valA} onChange={(e) => handleScoreChange(student.id, 'sectionA', e.target.value)} className="w-full text-center p-1 border rounded" onClick={(e) => e.stopPropagation()}/>
                         </td>
-                      </>
-                  )}
-                  
-                  {isIndicator && (
-                      <td className="border p-2 text-center text-xs text-gray-500 font-mono bg-gray-100">
-                          {obsAvgDisplay}
+                      )}
+                      <td className="border p-2 text-center bg-blue-50/50">
+                          {isIndicator ? (
+                              <select value={currentRating} onChange={(e) => handleIndicatorChange(student.id, e.target.value as any)} className="w-full p-1 border rounded font-bold text-center" onClick={(e) => e.stopPropagation()}>
+                                  <option value="">-</option>
+                                  <option value="D">D</option>
+                                  <option value="A">A</option>
+                                  <option value="A+">A+</option>
+                              </select>
+                          ) : (
+                              <input type="number" min="0" max={(isScience && scienceBase === 140) ? 100 : 60} value={valB === 0 ? '' : valB} onChange={(e) => handleScoreChange(student.id, 'sectionB', e.target.value)} className="w-full text-center p-1 border rounded" onClick={(e) => e.stopPropagation()}/>
+                          )}
                       </td>
+                    </>
                   )}
-
+                  {isIndicator && <td className="border p-2 text-center text-xs text-gray-500 font-mono bg-gray-100">{obsAvgDisplay}</td>}
                   {!isEarlyChildhood && <td className="border p-2 text-center font-bold bg-gray-100">{rawTotal}</td>}
                   {(isScience && isJHS) && <td className="border p-2 text-center font-bold bg-green-100">{displayTotal}</td>}
-                  
                   {!isEarlyChildhood && <td className="border p-2 text-xs italic text-gray-500 bg-gray-50">{generateSubjectRemark(displayTotal)}</td>}
-                  
                   <td className="border p-2">
                     <input type="text" value={student.subjectRemarks?.[selectedSubject] || ""} onChange={(e) => handleSubjectRemarkChange(student.id, e.target.value)} placeholder="..." className="w-full p-1 bg-transparent border-b outline-none text-xs" onClick={(e) => e.stopPropagation()}/>
                   </td>
@@ -478,7 +448,6 @@ const ScoreEntry: React.FC<ScoreEntryProps> = ({ students, setStudents, settings
         </table>
       </div>
 
-      {/* Footer for Assessment / Daycare Skills */}
       {activeStudent && (
           <div className="fixed bottom-0 left-0 right-0 bg-white border-t-4 border-blue-600 shadow-[0_-5px_20px_rgba(0,0,0,0.1)] p-4 z-40 h-80 overflow-y-auto">
               <div className="max-w-6xl mx-auto flex flex-col gap-4">
@@ -489,10 +458,8 @@ const ScoreEntry: React.FC<ScoreEntryProps> = ({ students, setStudents, settings
                     </div>
                     <button onClick={() => setActiveStudentId(null)} className="text-blue-600 font-bold border px-3 py-1 rounded">Close</button>
                   </div>
-
                   {isEarlyChildhood ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                          {/* Daycare Details */}
                           <div className="space-y-3">
                              <div className="grid grid-cols-2 gap-2">
                                  <div>
@@ -512,43 +479,32 @@ const ScoreEntry: React.FC<ScoreEntryProps> = ({ students, setStudents, settings
                                 <label className="text-xs font-bold uppercase text-gray-600">Conduct</label>
                                 <input type="text" value={activeStudent.conduct || ""} onChange={(e) => handleAssessmentChange(activeStudent.id, 'conduct', e.target.value)} className="w-full border p-1 rounded"/>
                              </div>
-                              <div>
+                             <div>
                                 <label className="text-xs font-bold uppercase text-gray-600">Overall Remark</label>
                                 <textarea value={activeStudent.overallRemark || ""} onChange={(e) => handleAssessmentChange(activeStudent.id, 'overallRemark', e.target.value)} className="w-full border p-1 rounded h-16"/>
                              </div>
                           </div>
-
-                          {/* Skills Checklist (Summary View) */}
                           <div>
                               <h4 className="font-bold text-sm text-blue-900 border-b mb-2">Social / Physical Development Checklist</h4>
                               <div className="h-48 overflow-y-auto border p-2 bg-gray-50 rounded">
                                   <table className="w-full text-xs">
                                       <thead>
-                                          <tr className="text-gray-500 uppercase">
-                                              <th className="text-left p-1">Skill</th>
-                                              <th className="p-1 w-8 text-center" title="Developing">D</th>
-                                              <th className="p-1 w-8 text-center" title="Achieved">A</th>
-                                              <th className="p-1 w-8 text-center" title="Advanced">A+</th>
+                                          <tr className="text-gray-500 uppercase text-left">
+                                              <th className="p-1">Skill</th>
+                                              <th className="p-1 w-8 text-center">D</th>
+                                              <th className="p-1 w-8 text-center">A</th>
+                                              <th className="p-1 w-8 text-center">A+</th>
                                           </tr>
                                       </thead>
                                       <tbody>
                                           {activeIndicatorsList.map(skill => {
-                                              const obsScores = activeStudent.observationScores?.[skill];
-                                              const derived = getObservationRating(obsScores);
-                                              const currentRating = activeStudent.skills?.[skill] || derived;
-
+                                              const rating = activeStudent.skills?.[skill];
                                               return (
                                               <tr key={skill} className="border-b last:border-0 hover:bg-white">
                                                   <td className="p-1">{skill}</td>
-                                                  {['D', 'A', 'A+'].map(rating => (
-                                                      <td key={rating} className="p-1 text-center">
-                                                          <input 
-                                                            type="radio" 
-                                                            name={`skill-${activeStudent.id}-${skill}`}
-                                                            checked={currentRating === rating}
-                                                            onChange={() => handleSkillChange(activeStudent.id, skill, rating as any)}
-                                                            className="cursor-pointer"
-                                                          />
+                                                  {['D', 'A', 'A+'].map(r => (
+                                                      <td key={r} className="p-1 text-center">
+                                                          <input type="radio" checked={rating === r} onChange={() => handleSkillChange(activeStudent.id, skill, r as any)} className="cursor-pointer"/>
                                                       </td>
                                                   ))}
                                               </tr>
@@ -559,28 +515,14 @@ const ScoreEntry: React.FC<ScoreEntryProps> = ({ students, setStudents, settings
                           </div>
                       </div>
                   ) : (
-                      // Standard Footer
                       <div className="grid grid-cols-2 gap-4">
-                          {/* ... Standard footer ... */}
                           <div>
                               <label className="block text-xs font-bold uppercase text-gray-700 mb-1">Class Teacher's Remark</label>
-                              <EditableField 
-                                 value={activeStudent.overallRemark || ""}
-                                 onChange={(val) => handleAssessmentChange(activeStudent.id, 'overallRemark', val)}
-                                 multiline
-                                 rows={3}
-                                 className="w-full border border-gray-300 rounded p-2 text-sm bg-gray-50"
-                              />
+                              <EditableField value={activeStudent.overallRemark || ""} onChange={(val) => handleAssessmentChange(activeStudent.id, 'overallRemark', val)} multiline rows={3} className="w-full border border-gray-300 rounded p-2 text-sm bg-gray-50"/>
                           </div>
                           <div>
                               <label className="block text-xs font-bold uppercase text-gray-700 mb-1">Recommendation</label>
-                              <EditableField 
-                                 value={activeStudent.recommendation || ""}
-                                 onChange={(val) => handleAssessmentChange(activeStudent.id, 'recommendation', val)}
-                                 multiline
-                                 rows={3}
-                                 className="w-full border border-gray-300 rounded p-2 text-sm bg-gray-50"
-                              />
+                              <EditableField value={activeStudent.recommendation || ""} onChange={(val) => handleAssessmentChange(activeStudent.id, 'recommendation', val)} multiline rows={3} className="w-full border border-gray-300 rounded p-2 text-sm bg-gray-50"/>
                           </div>
                       </div>
                   )}

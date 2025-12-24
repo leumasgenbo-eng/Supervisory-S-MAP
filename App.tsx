@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { calculateClassStatistics, processStudentData, calculateFacilitatorStats, generatePDFBlob } from './utils';
+import { calculateClassStatistics, processStudentData, calculateFacilitatorStats, generatePDFBlob, generateWordBlob } from './utils';
 import { GlobalSettings, StudentData, Department, Module, SchoolClass, ProcessedStudent } from './types';
 import { RAW_STUDENTS, FACILITATORS, getSubjectsForDepartment, DEFAULT_GRADING_REMARKS, DAYCARE_INDICATORS } from './constants';
 import MasterSheet from './components/MasterSheet';
@@ -35,7 +35,8 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   customIndicators: [],
   customSubjects: [],
   disabledSubjects: [],
-  staffList: []
+  staffList: [],
+  scienceBase: 140
 };
 
 const DEPARTMENTS: Department[] = [
@@ -69,6 +70,7 @@ const App: React.FC = () => {
 
   // Bulk Sharing State
   const [isBulkSharing, setIsBulkSharing] = useState(false);
+  const [bulkShareFormat, setBulkShareFormat] = useState<'pdf' | 'word'>('pdf');
   const [bulkShareIndex, setBulkShareIndex] = useState(-1);
   const [bulkShareLog, setBulkShareLog] = useState<{name: string, status: 'pending' | 'success' | 'error'}[]>([]);
 
@@ -134,14 +136,22 @@ const App: React.FC = () => {
         ? `daycare-report-${student.id}` 
         : `report-${student.id}`;
     
-    const res = await generatePDFBlob(elementId, `${student.name.replace(/\s+/g, '_')}_Report.pdf`);
+    const extension = bulkShareFormat === 'pdf' ? 'pdf' : 'doc';
+    const filename = `${student.name.replace(/\s+/g, '_')}_Report.${extension}`;
+    
+    let res;
+    if (bulkShareFormat === 'pdf') {
+        res = await generatePDFBlob(elementId, filename);
+    } else {
+        res = await generateWordBlob(elementId, filename);
+    }
     
     if (res && navigator.share) {
         try {
             await navigator.share({
                 files: [res.file],
-                title: `${student.name} Report Card`,
-                text: `Report card for ${student.name} from United Baylor Academy.`
+                title: `${student.name} Report Card (${bulkShareFormat.toUpperCase()})`,
+                text: `Report card for ${student.name} from ${settings.schoolName}. Sent via United Baylor Academy System.`
             });
             const nextLog = [...bulkShareLog];
             nextLog[bulkShareIndex].status = 'success';
@@ -167,8 +177,25 @@ const App: React.FC = () => {
                       <button onClick={() => setIsBulkSharing(false)} className="text-blue-300 hover:text-white">✕</button>
                   </div>
                   <div className="p-4 border-b bg-blue-50">
+                      <div className="mb-4 flex items-center justify-between">
+                          <label className="text-xs font-black text-blue-900 uppercase">Share Format:</label>
+                          <div className="flex bg-white rounded border border-blue-200 p-1 text-[10px]">
+                              <button 
+                                onClick={() => setBulkShareFormat('pdf')} 
+                                className={`px-4 py-1 rounded font-bold transition ${bulkShareFormat === 'pdf' ? 'bg-blue-600 text-white shadow' : 'text-blue-900 hover:bg-blue-50'}`}
+                              >
+                                PDF
+                              </button>
+                              <button 
+                                onClick={() => setBulkShareFormat('word')} 
+                                className={`px-4 py-1 rounded font-bold transition ${bulkShareFormat === 'word' ? 'bg-blue-600 text-white shadow' : 'text-blue-900 hover:bg-blue-50'}`}
+                              >
+                                WORD (DOC)
+                              </button>
+                          </div>
+                      </div>
                       <p className="text-sm text-blue-900 mb-4">
-                          Browsers require a user gesture for each file share. Click <strong>"Share to WhatsApp"</strong> to send the current report. The next student will load automatically.
+                          Browsers require a user gesture for each file share. Click <strong>"Share to WhatsApp"</strong> below. The next student will load automatically.
                       </p>
                       <div className="w-full bg-blue-200 h-2 rounded-full overflow-hidden">
                           <div 
@@ -181,11 +208,11 @@ const App: React.FC = () => {
                   <div className="flex-1 overflow-y-auto p-4 space-y-2">
                       {bulkShareLog.map((item, i) => (
                           <div key={i} className={`flex justify-between items-center p-2 rounded border ${i === bulkShareIndex ? 'bg-yellow-50 border-yellow-300 ring-2 ring-yellow-400' : 'bg-white'}`}>
-                              <span className={`text-sm ${i === bulkShareIndex ? 'font-bold' : ''}`}>{i+1}. {item.name}</span>
+                              <span className={`text-sm ${i === bulkShareIndex ? 'font-bold text-blue-900' : ''}`}>{i+1}. {item.name}</span>
                               {item.status === 'success' ? (
-                                  <span className="text-green-600 font-bold text-xs">✓ Shared</span>
+                                  <span className="text-green-600 font-bold text-xs flex items-center gap-1">✓ Sent</span>
                               ) : i === bulkShareIndex ? (
-                                  <span className="text-blue-600 animate-pulse text-xs font-bold">Current</span>
+                                  <span className="text-blue-600 animate-pulse text-xs font-bold italic">Ready...</span>
                               ) : (
                                   <span className="text-gray-400 text-xs">Pending</span>
                               )}
@@ -205,7 +232,7 @@ const App: React.FC = () => {
                             className="flex-[2] py-3 bg-green-600 text-white rounded font-bold shadow-lg hover:bg-green-700 flex items-center justify-center gap-2"
                           >
                               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.539 2.016 2.126-.54c.947.518 1.842.802 2.871.802h.001c3.181 0 5.766-2.586 5.767-5.766 0-3.18-2.585-5.765-5.677-5.765zm3.084 8.213c-.17.475-.85.87-1.168.924-.316.056-.708.083-1.135-.054-.26-.083-.589-.196-.98-.363-1.666-.71-2.733-2.4-2.816-2.51-.084-.111-.678-.897-.678-1.711 0-.814.426-1.214.577-1.378.15-.164.329-.205.438-.205.109 0 .219.001.314.005.101.005.237-.038.37.28.137.329.466 1.137.507 1.219.041.083.068.178.013.287-.054.11-.082.178-.164.273-.082.095-.173.15-.246.233-.083.082-.17.172-.073.342.097.17.433.714.927 1.154.636.565 1.171.74 1.336.823.164.083.26.069.356-.041.095-.11.411-.479.52-.644.11-.164.219-.137.37-.083.15.054.958.451 1.123.533.164.083.274.123.314.192.041.068.041.397-.13.872z"/></svg>
-                              Share to WhatsApp
+                              Share {bulkShareFormat.toUpperCase()}
                           </button>
                       ) : (
                           <button 
